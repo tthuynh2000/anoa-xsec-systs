@@ -9,6 +9,8 @@ atmospheric-neutrino oscillation analysis:
 | `plot_syst_spectra.py` | Reco and true spectra (ν<sub>e</sub> / ν<sub>μ</sub> / NC samples) at CV and ±nσ for each dial, with ratio-to-CV panels |
 | `syst_covariance.py` | Per-dial covariance matrices from ±σ universes, their sum, correlation matrices and per-bin error bands |
 | `plot_reco_cosz.py` | Reco cos θ<sub>z</sub> from the shower (`heshw`) and track (`lngtrk`) directions for ν<sub>e</sub>-like / ν<sub>μ</sub>-like samples, weighted by the base weight × dial CVs (§5.2) |
+| `plot_syst_spectra_josh.py` | Same spectra as `plot_syst_spectra.py`, with **Josh's** selection, reconstruction and one-dial weights (§6d) |
+| `syst_covariance_josh.py` | Same covariance matrices / bands as `syst_covariance.py`, with **Josh's** conventions (§6d) |
 | `make_part_info.py` | **Run once with ROOT.** Per-event closest particle wall distance (for FC/PC) and exact particle count from the memberwise `part.pandora` branch → `part_info.npz` |
 | `check_weights.py` | Optional diagnostic: statistics of the CAF `weights` branches and how `final_oscillated_w` relates to flux / xsec / oscillation branches |
 
@@ -459,6 +461,47 @@ python syst_covariance.py --group CCQE_Axial_Deut_PCA --containment fc pc \
 
 ---
 
+## 6d. Josh's conventions: `plot_syst_spectra_josh.py`, `syst_covariance_josh.py`
+
+These scripts give the same plots and outputs as the two main scripts. They
+reuse the plotting, binning, dial groups and dial reading from
+`plot_syst_spectra.py` / `syst_covariance.py`, so keep all of them in one
+folder. Only the selection, reconstruction and weights are Josh's. Default
+outputs go to `syst_spectra_josh/` and `syst_cov_josh/`, and every title says
+"[Josh]". `part_info.npz` from `make_part_info.py` is **required**.
+
+```bash
+python plot_syst_spectra_josh.py --group CCQE_Axial_Deut_PCA --containment fc pc \
+    --samples cc_nue cc_numu --variables reco_E reco_y reco_cosz --uniform-axis --show-nominal
+python syst_covariance_josh.py --group CCQE_Axial_Deut_PCA --containment fc pc \
+    --samples cc_nue cc_numu --variables reco_E reco_y reco_cosz --per-dial-plots
+```
+
+| | Josh (these scripts) | Yours (main scripts) |
+|---|---|---|
+| Samples (`--samples`) | **true** channels: `cc_nue` (CC, \|pdg\| = 12), `cc_numu` (CC, \|pdg\| = 14), `nc`, `cc_nue+cc_numu`, `all`; ν and ν̄ together | CVN reco selection; ν only |
+| Common selection (cut flow printed) | exactly 1 MC ν; exactly 1 pandora interaction; supported channel; nominal > 0 and finite; true E in [0.1, 100] GeV (`--emin/--emax`); vertex FV (`--fv` box, true or reco vertex; **off unless given**); valid containment; valid true and reco directions. `--skip-cuts` drops any of them | first ν / first interaction; `npfps ≥ 2`; finite CVN; non-zero direction |
+| FC / PC | FC: `walldist_min` > 10 cm; PC: 0 ≤ `walldist_min` ≤ 10 cm; missing, negative or > 10000 cm = unknown and removed | > / ≤ `--walldist-cut` (20 cm); only NaN is unknown |
+| Reco direction | `dir.calo` if NC, or nParticles < 2, or !(Enu.calo < 1.3); else `heshw` (true CC ν<sub>e</sub>) / `lngtrk` (true CC ν<sub>μ</sub>); −d<sub>y</sub>/\|d\| | same rule, but chosen by the reco sample; NC not forced to `dir.calo` |
+| Reco E / E<sub>had</sub> | `e_calo` / `lep_calo` with `e_had` for **both**; NC: E = E<sub>had</sub> = `Enu.calo`; `--reco-energy matched_range` uses `mu_range` / `mu_had` for muons | `mu_had` for the ν<sub>μ</sub> sample |
+| Reco y | E<sub>had</sub>/E, 0 if E ≤ 0; NaN for NC | NaN if E ≤ 0 |
+| True E<sub>had</sub> / E<sub>lep</sub> / y / cos θ<sub>z</sub> | q0 / E − q0 / inelasticity / −p<sub>y</sub>/\|p\| | E·y / E(1−y) / inelasticity / −p<sub>y</sub>/E |
+| Nominal weight | xsec × flux of the true flavour, unoscillated | same |
+| Dials | **one-dial**: only the varied dial; no other CVs | all other dials at CV (b-scans once) |
+| Responses | nonfinite → 1; clipped to [−9999, 9999]; final weight ≤ 0 → 0 | raw: nonfinite → missing bin; negatives kept |
+
+**Curves and matrices**
+* **Spectra:** black is the dial at its cv (Josh's "central/reference" curve). `--show-nominal` adds the no-dial nominal as a dotted line. The y axis is **events / bin width** by default (label "Events / bin width"); `--no-per-width` gives events per bin. The ratio panel is unchanged.
+* **Covariance:** each dial's universes are compared with that dial's own cv reference, E = Σ<sub>d</sub> E<sup>(d)</sup>, and the band is drawn around the nominal. Per-dial band plots are drawn around the dial's reference. Each output also gets a `*_refs.npz` with these references.
+* **Flow accounting:** the scripts print under/overflow and finite counts per sample and variable. Reco y outside [0, 1] stays in the data but falls outside the histogram edges.
+* **Binning:** the FC/PC table (§7) applies to `cc_nue` / `cc_numu`; NC uses the general edges.
+
+**Not reproduced or unknown**
+* **Fiducial volume:** Josh's "configured vertex fiducial volume" box isn't known. Give it with `--fv`.
+* **Signed angular 68 % width:** this observable is not implemented.
+* **Contradiction in his notes:** they say both "nonfinite responses invalidate touched bins" and "nonfinite knots become 1". These scripts follow the verified numerical policy (→ 1).
+
+---
 ## 7. Binning (spectra and covariance)
 
 Priority, later wins: default uniform → `--nbins` → `--binning` preset →
@@ -610,4 +653,7 @@ done
 | 2026-10-30 | Dial groups replaced by the user's 27 physics groups (CCQE axial ×3, vector, templates, QE interference, NCEL, RES/ResIso, NonRES CC/NC, DIS, MEC ×8, FSI, pion absorption, Woods–Saxon, flavour ratios) |
 | 2026-10-30 | FC/PC: `make_part_info.py` (PyROOT/RDataFrame, classes from `MakeProject`) → `part_info.npz` with `walldist_min` and exact nParticles; `--containment fc pc`, `--walldist-cut`, `--part-info`; new variables `reco_y`/`true_y`; default binning `atm_fcpc` with the FC/PC ν<sub>e</sub>/ν<sub>μ</sub> E<sub>ν</sub>, y and cos θ<sub>z</sub> edges |
 | 2026-10-31 | `make_part_info.py`: if `rootcint`/`rootcling` is missing (pip ROOT), compile the MakeProject classes with ACLiC (only g++ needed) |
+| 2026-11-01 | `plot_syst_spectra_josh.py` and `syst_covariance_josh.py`: Josh's truth-channel samples, common selection with cut flow, FC > 10 / PC 0–10 cm, hybrid direction (NC → calo), e_had energies, q0 truth, one-dial weights with nonfinite → 1, ±9999 clip, ≤ 0 → 0; band plots take a `cv_label` |
 | 2026-11-01 | Code put in a git repository: `requirements.txt`, `.gitignore` |
+| 2026-11-02 | `plot_syst_spectra_josh.py`: y axis is events / bin width by default ("Events / bin width"); `--no-per-width` for events per bin |
+| 2026-11-02 | Josh-convention scripts (`plot_syst_spectra_josh.py`, `syst_covariance_josh.py`) and README §6d added to the repository |
